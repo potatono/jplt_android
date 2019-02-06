@@ -1,0 +1,62 @@
+{
+  "project_info": {
+    "project_number": "616655403291",
+    "firebase_url": "https://personalpodcastapp.firebaseio.com",
+    "project_id": "personalpodcastapp",
+    "storage_bucket": "personalpodcastapp.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:616655403291:android:786f3a4f20b2e50f",
+        "android_client_info": {
+          "package_name": "com.jplt.PPC"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "616655403291-1ajb5fmr29a1dta9mru5oelsq8bnqedu.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.jplt.PPC",
+            "certificate_hash": "ec834484f66fe8f564cb593a543aaf83d787e6be"
+          }
+        },
+        {
+          "client_id": "616655403291-2b927vi7pfg7ht27q791fs347dsmfi0k.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCElhNyezqYcRzgFYHXbK33d-yk-bzrEl4"
+        }
+      ],
+      "services": {
+        "analytics_service": {
+          "status": 1
+        },
+        "appinvite_service": {
+          "status": 2,
+          "other_platform_oauth_client": [
+            {
+              "client_id": "616655403291-2b927vi7pfg7ht27q791fs347dsmfi0k.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "616655403291-hhjqi6imru10b6vqoi0f7fakc6vguldu.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.jplt.PPC"
+              }
+            }
+          ]
+        },
+        "ads_service": {
+          "status": 2
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
