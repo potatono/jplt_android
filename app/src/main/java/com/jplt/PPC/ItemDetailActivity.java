@@ -1,5 +1,6 @@
 package com.jplt.PPC;
 
+import android.content.DialogInterface;
 import android.content.Intent;
 import android.media.AudioAttributes;
 import android.media.MediaPlayer;
@@ -7,7 +8,9 @@ import android.media.MediaRecorder;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
+import android.support.annotation.NonNull;
 import android.support.design.widget.FloatingActionButton;
+import android.support.v7.app.AlertDialog;
 import android.util.DisplayMetrics;
 import android.util.Log;
 import android.view.KeyEvent;
@@ -22,9 +25,10 @@ import android.widget.SeekBar;
 import android.widget.TextView;
 
 import com.bumptech.glide.Glide;
+import com.google.android.gms.tasks.OnCompleteListener;
+import com.google.android.gms.tasks.Task;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseUser;
-import com.jplt.PPC.podcast.Episodes;
 import com.yalantis.ucrop.UCrop;
 
 import java.io.File;
@@ -46,11 +50,12 @@ public class ItemDetailActivity extends AppCompatActivity {
     enum State { EMPTY, RECORDING, STOPPED, PLAYING, PAUSED }
 
     State mState = State.EMPTY;
-    Episodes.Episode mEpisode = null;
+    Episode mEpisode = new Episode();
 
     EditText mTitle = null;
     ImageView mCover = null;
     Button mMediaButton = null;
+    Button mDeleteButton = null;
     SeekBar mSeekBar = null;
     TextView mTimeElapsed = null;
     TextView mTimeRemain = null;
@@ -76,7 +81,7 @@ public class ItemDetailActivity extends AppCompatActivity {
         setEpisode();
         initializeControls();
 
-        if (mEpisode == null)
+        if (mEpisode.isNew())
             setupRecorder();
     }
 
@@ -90,7 +95,7 @@ public class ItemDetailActivity extends AppCompatActivity {
 
     @Override
     public boolean onTouchEvent(MotionEvent event) {
-        mTitle.setCursorVisible(false);
+        finishEditingTitle();
 
         return super.onTouchEvent(event);
     }
@@ -100,30 +105,21 @@ public class ItemDetailActivity extends AppCompatActivity {
         if (resultCode != RESULT_OK)
             return;
 
+        //HERE
         if (requestCode == INTENT_PICK_IMAGE) {
-            Uri sourceUri = data.getData();
-            Uri destinationUri = Uri.fromFile(new File(getCacheDir(), COVER_FILENAME));
-
-            Log.i("CROP", sourceUri.toString());
-            Log.i("CROP", destinationUri.toString());
-
-            UCrop.of(sourceUri, destinationUri)
-                    .withAspectRatio(1, 1)
-                    .withMaxResultSize(1024, 1024)
-                    .start(this);
+            startCroppingCover(data.getData());
         }
         else if (requestCode == UCrop.REQUEST_CROP) {
             Uri resultUri = UCrop.getOutput(data);
-            Log.i("CROP", resultUri.toString());
-            mCover.setImageURI(resultUri);
+            finishEditingCover(resultUri);
         }
     }
 
     boolean isOwner() {
         FirebaseUser user = FirebaseAuth.getInstance().getCurrentUser();
 
-        return ((mEpisode == null && user != null) ||
-                (mEpisode != null && user != null && mEpisode.owner == user.getUid()));
+        return ((mEpisode.isNew() && user != null) ||
+                (user != null && mEpisode.owner == user.getUid()));
 
     }
 
@@ -133,13 +129,13 @@ public class ItemDetailActivity extends AppCompatActivity {
         mTitle.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
-                editTitle();
+                startEditingTitle();
             }
         });
         mTitle.setOnEditorActionListener(new TextView.OnEditorActionListener() {
             @Override
             public boolean onEditorAction(TextView textView, int i, KeyEvent keyEvent) {
-                mTitle.setCursorVisible(false);
+                finishEditingTitle();
                 return false;
             }
         });
@@ -148,8 +144,16 @@ public class ItemDetailActivity extends AppCompatActivity {
         mMediaButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
-                mTitle.setCursorVisible(false);
+                finishEditingTitle();
                 ItemDetailActivity.this.toggleState();
+            }
+        });
+
+        mDeleteButton = findViewById(R.id.delete_button);
+        mDeleteButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                startDelete();
             }
         });
 
@@ -171,7 +175,7 @@ public class ItemDetailActivity extends AppCompatActivity {
             @Override
             public void onStartTrackingTouch(SeekBar seekBar) {
                 ItemDetailActivity.this.startSeek();
-                mTitle.setCursorVisible(false);
+                finishEditingTitle();
             }
 
             @Override
@@ -196,7 +200,7 @@ public class ItemDetailActivity extends AppCompatActivity {
         mCover.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
-                editCover();
+                startEditingCover();
             }
         });
     }
@@ -292,39 +296,33 @@ public class ItemDetailActivity extends AppCompatActivity {
         String id = getIntent().getStringExtra("item_id");
 
         if (id != null) {
-            Episodes episodes = Episodes.getInstance(this);
+            Episodes episodes = Episodes.getInstance();
             mEpisode = episodes.episode_map.get(id);
-        }
-        else {
-            mEpisode = null;
         }
     }
 
     void initializeControls() {
-        if (mEpisode != null) {
-            mTitle.setText(mEpisode.title);
+        mTitle.setText(mEpisode.title);
 
-            if (mEpisode.remoteCoverURL != null) {
-                ImageView cover = findViewById(R.id.detail_cover);
-                Glide.with(this).load(mEpisode.remoteCoverURL).into(cover);
+        if (mEpisode.remoteCoverURL != null) {
+            ImageView cover = findViewById(R.id.detail_cover);
+            Glide.with(this).load(mEpisode.remoteCoverURL).into(cover);
+        }
+
+        if (mEpisode.remoteURL != null) {
+            setState(State.STOPPED);
+
+            try {
+                mPlayer.setDataSource(mEpisode.remoteURL);
+                mPlayer.prepare();
+            } catch (IOException e) {
+                Log.e("MediaPlayer", "Exception while setting data source", e);
             }
+        }
 
-            if (mEpisode.remoteURL != null) {
-                setState(State.STOPPED);
-
-                try {
-                    mPlayer.setDataSource(mEpisode.remoteURL);
-                    mPlayer.prepare();
-                }
-                catch (IOException e) {
-                    Log.e("MediaPlayer", "Exception while setting data source", e);
-                }
-            }
-
-            if (!isOwner()) {
-                mTitle.setEnabled(false);
-                mCover.setEnabled(false);
-            }
+        if (!isOwner()) {
+            mTitle.setEnabled(false);
+            mCover.setEnabled(false);
         }
     }
 
@@ -406,17 +404,18 @@ public class ItemDetailActivity extends AppCompatActivity {
         setState(State.STOPPED);
 
         if (mRecorder != null) {
-            String localPath = new File(getCacheDir(), AUDIO_FILENAME).getAbsolutePath();
-
+            Uri localUri = Uri.fromFile(new File(getCacheDir(), AUDIO_FILENAME));
             mRecorder.stop();
 
             try {
-                mPlayer.setDataSource(localPath);
+                mPlayer.setDataSource(this, localUri);
                 mPlayer.prepare();
             }
             catch (IOException e) {
                 Log.e("MediaPlayer", "Caught IOException", e);
             }
+
+            mEpisode.uploadRecording(localUri);
         }
     }
 
@@ -477,7 +476,7 @@ public class ItemDetailActivity extends AppCompatActivity {
         }
     }
 
-    void editTitle() {
+    void startEditingTitle() {
         Log.d("ItemDetail", "Requested edit title.");
         mTitle.setCursorVisible(true);
 
@@ -487,11 +486,70 @@ public class ItemDetailActivity extends AppCompatActivity {
         }
     }
 
-    void editCover() {
+    void finishEditingTitle() {
+        if (mTitle.isCursorVisible()) {
+            mTitle.setCursorVisible(false);
+            mEpisode.title = mTitle.getText().toString();
+            mEpisode.save();
+        }
+    }
+
+    void startEditingCover() {
         Intent intent = new Intent();
         intent.setType("image/*");
         intent.setAction(Intent.ACTION_GET_CONTENT);
         startActivityForResult(Intent.createChooser(intent, "Select Cover"),
                 INTENT_PICK_IMAGE);
+    }
+
+    void startCroppingCover(Uri sourceUri) {
+        Uri destinationUri = Uri.fromFile(new File(getCacheDir(), COVER_FILENAME));
+
+        Log.d("CROP", sourceUri.toString());
+        Log.d("CROP", destinationUri.toString());
+
+        UCrop.of(sourceUri, destinationUri)
+                .withAspectRatio(1, 1)
+                .withMaxResultSize(1024, 1024)
+                .start(this);
+    }
+
+    void finishEditingCover(Uri resultUri) {
+        Log.d("CROP", resultUri.toString());
+        mCover.setImageURI(resultUri);
+        mEpisode.uploadCover(resultUri);
+    }
+
+    void startDelete() {
+        AlertDialog.Builder dialog = new AlertDialog.Builder(this);
+        dialog.setTitle("Delete Episode?");
+        dialog.setMessage("Are you sure you want to delete this episode?");
+        dialog.setPositiveButton("Yes", new DialogInterface.OnClickListener() {
+            @Override
+            public void onClick(DialogInterface dialogInterface, int i) {
+                finishDelete();
+                dialogInterface.dismiss();
+            }
+        });
+
+        dialog.setNegativeButton("No", new DialogInterface.OnClickListener() {
+            @Override
+            public void onClick(DialogInterface dialogInterface, int i) {
+                dialogInterface.dismiss();
+            }
+        });
+
+        dialog.show();
+    }
+
+    void finishDelete() {
+        if (!mEpisode.isNew()) {
+            mEpisode.delete(new OnCompleteListener<Void>() {
+                @Override
+                public void onComplete(@NonNull Task<Void> task) {
+                    ItemDetailActivity.this.finish();
+                }
+            });
+        }
     }
 }

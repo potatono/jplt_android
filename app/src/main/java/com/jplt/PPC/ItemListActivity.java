@@ -8,7 +8,6 @@ import android.support.v7.app.AppCompatActivity;
 import android.support.v7.widget.RecyclerView;
 import android.support.v7.widget.Toolbar;
 import android.support.design.widget.FloatingActionButton;
-import android.support.design.widget.Snackbar;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -17,7 +16,6 @@ import android.widget.TextView;
 
 import com.firebase.ui.auth.AuthUI;
 import com.google.firebase.auth.FirebaseAuth;
-import com.jplt.PPC.podcast.Episodes;
 
 import java.util.Arrays;
 import java.util.List;
@@ -76,11 +74,11 @@ public class ItemListActivity extends AppCompatActivity {
         }
     }
     private void setupRecyclerView(@NonNull final RecyclerView recyclerView) {
-        Episodes episodes = Episodes.getInstance(this);
+        Episodes episodes = Episodes.getInstance();
         final RecyclerView.Adapter adapter = new SimpleItemRecyclerViewAdapter(this, episodes.episodes);
         episodes.addListener(new Episodes.EpisodeChangeHandler() {
             @Override
-            public void onChange(Episodes.ChangeType type, Episodes.Episode episode) {
+            public void onChange(Episodes.ChangeType type, Episode episode) {
                 adapter.notifyDataSetChanged();
             }
         });
@@ -92,11 +90,11 @@ public class ItemListActivity extends AppCompatActivity {
             extends RecyclerView.Adapter<SimpleItemRecyclerViewAdapter.ViewHolder> {
 
         private final ItemListActivity mParentActivity;
-        private final List<Episodes.Episode> mValues;
+        private final List<Episode> mValues;
         private final View.OnClickListener mOnClickListener = new View.OnClickListener() {
             @Override
             public void onClick(View view) {
-                Episodes.Episode item = (Episodes.Episode) view.getTag();
+                Episode item = (Episode) view.getTag();
                 Context context = view.getContext();
                 Intent intent = new Intent(context, ItemDetailActivity.class);
                 intent.putExtra("item_id", item.id);
@@ -106,7 +104,7 @@ public class ItemListActivity extends AppCompatActivity {
         };
 
         SimpleItemRecyclerViewAdapter(ItemListActivity parent,
-                                      List<Episodes.Episode> items) {
+                                      List<Episode> items) {
             mValues = items;
             mParentActivity = parent;
         }
@@ -120,7 +118,7 @@ public class ItemListActivity extends AppCompatActivity {
 
         @Override
         public void onBindViewHolder(final ViewHolder holder, int position) {
-            Episodes.Episode episode = mValues.get(position);
+            Episode episode = mValues.get(position);
             holder.mTitleView.setText(episode.title);
 
             if (episode.remoteCoverURL != null) {

@@ -83,6 +83,19 @@
                 android:drawableTop="@drawable/record"
                 android:focusable="true" />
 
+            <Button
+                android:id="@+id/delete_button"
+                android:layout_width="25dp"
+                android:layout_height="25dp"
+                android:layout_alignParentTop="true"
+                android:layout_alignParentRight="true"
+                android:layout_marginTop="62.5dp"
+                android:layout_marginRight="20dp"
+                android:background="@color/fui_transparent"
+                android:drawableTop="@drawable/trash"
+                android:focusable="true" />
+
+
             <TextView
                 android:id="@+id/time_elapsed"
                 android:layout_width="wrap_content"
