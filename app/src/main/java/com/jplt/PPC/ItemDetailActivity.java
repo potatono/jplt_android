@@ -1,32 +1,33 @@
 package com.jplt.PPC;
 
 import android.content.Intent;
-import android.graphics.drawable.Drawable;
-import android.media.AudioManager;
+import android.media.AudioAttributes;
 import android.media.MediaPlayer;
+import android.media.MediaRecorder;
+import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
-import android.support.annotation.NonNull;
 import android.support.design.widget.FloatingActionButton;
-import android.support.design.widget.Snackbar;
-import android.support.v7.view.ActionMode;
-import android.support.v7.widget.AppCompatImageButton;
-import android.support.v7.widget.Toolbar;
 import android.util.DisplayMetrics;
 import android.util.Log;
+import android.view.KeyEvent;
+import android.view.MotionEvent;
 import android.view.View;
 import android.support.v7.app.AppCompatActivity;
-import android.support.v7.app.ActionBar;
 import android.view.MenuItem;
 import android.widget.Button;
-import android.widget.ImageButton;
+import android.widget.EditText;
 import android.widget.ImageView;
 import android.widget.SeekBar;
 import android.widget.TextView;
 
 import com.bumptech.glide.Glide;
+import com.google.firebase.auth.FirebaseAuth;
+import com.google.firebase.auth.FirebaseUser;
 import com.jplt.PPC.podcast.Episodes;
+import com.yalantis.ucrop.UCrop;
 
+import java.io.File;
 import java.io.IOException;
 
 /**
@@ -37,11 +38,18 @@ import java.io.IOException;
  */
 public class ItemDetailActivity extends AppCompatActivity {
 
+    public static int INTENT_PICK_IMAGE = 1;
+
+    public static String COVER_FILENAME = "cover.jpg";
+    public static String AUDIO_FILENAME = "sound.m4a";
+
     enum State { EMPTY, RECORDING, STOPPED, PLAYING, PAUSED }
 
     State mState = State.EMPTY;
     Episodes.Episode mEpisode = null;
 
+    EditText mTitle = null;
+    ImageView mCover = null;
     Button mMediaButton = null;
     SeekBar mSeekBar = null;
     TextView mTimeElapsed = null;
@@ -52,6 +60,10 @@ public class ItemDetailActivity extends AppCompatActivity {
     boolean mPlayerIsPrepared = false;
     boolean mClosing = false;
     boolean mSeeking = false;
+    MediaRecorder mRecorder = null;
+    Runnable mRecorderTimer = null;
+    Handler mRecorderHandler = null;
+    long mRecorderStartTime = 0;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -63,6 +75,9 @@ public class ItemDetailActivity extends AppCompatActivity {
         setupPlayer();
         setEpisode();
         initializeControls();
+
+        if (mEpisode == null)
+            setupRecorder();
     }
 
     @Override
@@ -73,11 +88,69 @@ public class ItemDetailActivity extends AppCompatActivity {
         super.onDestroy();
     }
 
+    @Override
+    public boolean onTouchEvent(MotionEvent event) {
+        mTitle.setCursorVisible(false);
+
+        return super.onTouchEvent(event);
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        if (resultCode != RESULT_OK)
+            return;
+
+        if (requestCode == INTENT_PICK_IMAGE) {
+            Uri sourceUri = data.getData();
+            Uri destinationUri = Uri.fromFile(new File(getCacheDir(), COVER_FILENAME));
+
+            Log.i("CROP", sourceUri.toString());
+            Log.i("CROP", destinationUri.toString());
+
+            UCrop.of(sourceUri, destinationUri)
+                    .withAspectRatio(1, 1)
+                    .withMaxResultSize(1024, 1024)
+                    .start(this);
+        }
+        else if (requestCode == UCrop.REQUEST_CROP) {
+            Uri resultUri = UCrop.getOutput(data);
+            Log.i("CROP", resultUri.toString());
+            mCover.setImageURI(resultUri);
+        }
+    }
+
+    boolean isOwner() {
+        FirebaseUser user = FirebaseAuth.getInstance().getCurrentUser();
+
+        return ((mEpisode == null && user != null) ||
+                (mEpisode != null && user != null && mEpisode.owner == user.getUid()));
+
+    }
+
     void setupControls() {
+
+        mTitle = findViewById(R.id.detail_title);
+        mTitle.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                editTitle();
+            }
+        });
+        mTitle.setOnEditorActionListener(new TextView.OnEditorActionListener() {
+            @Override
+            public boolean onEditorAction(TextView textView, int i, KeyEvent keyEvent) {
+                mTitle.setCursorVisible(false);
+                return false;
+            }
+        });
+
         mMediaButton = findViewById(R.id.media_button);
         mMediaButton.setOnClickListener(new View.OnClickListener() {
             @Override
-            public void onClick(View view) { ItemDetailActivity.this.toggleState(); }
+            public void onClick(View view) {
+                mTitle.setCursorVisible(false);
+                ItemDetailActivity.this.toggleState();
+            }
         });
 
         FloatingActionButton back_button = findViewById(R.id.back_button);
@@ -98,6 +171,7 @@ public class ItemDetailActivity extends AppCompatActivity {
             @Override
             public void onStartTrackingTouch(SeekBar seekBar) {
                 ItemDetailActivity.this.startSeek();
+                mTitle.setCursorVisible(false);
             }
 
             @Override
@@ -115,9 +189,16 @@ public class ItemDetailActivity extends AppCompatActivity {
         DisplayMetrics metrics = new DisplayMetrics();
         getWindowManager().getDefaultDisplay().getMetrics(metrics);
 
-        ImageView cover = findViewById(R.id.detail_cover);
-        cover.getLayoutParams().height = metrics.widthPixels;
-        cover.requestLayout();
+        mCover = findViewById(R.id.detail_cover);
+        mCover.getLayoutParams().height = metrics.widthPixels;
+        mCover.requestLayout();
+
+        mCover.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                editCover();
+            }
+        });
     }
 
     String formatTime(int totalSeconds) {
@@ -134,6 +215,7 @@ public class ItemDetailActivity extends AppCompatActivity {
             public void onPrepared(MediaPlayer mediaPlayer) {
                 mPlayerIsPrepared = true;
                 mTimeRemain.setText(formatTime(mPlayer.getDuration() / 1000));
+                Log.d("MediaPlayer", "Prepared.");
             }
         });
         mPlayer.setOnCompletionListener(new MediaPlayer.OnCompletionListener() {
@@ -143,8 +225,13 @@ public class ItemDetailActivity extends AppCompatActivity {
                 mTimeElapsed.setText("0:00");
                 mTimeRemain.setText(formatTime(mPlayer.getDuration() / 1000));
                 mSeekBar.setProgress(0);
+                Log.d("MediaPlayer", "Playback complete.");
             }
         });
+
+        AudioAttributes.Builder aaBuilder = new AudioAttributes.Builder();
+        aaBuilder.setContentType(AudioAttributes.CONTENT_TYPE_MUSIC);
+        mPlayer.setAudioAttributes(aaBuilder.build());
 
         mPlayerHandler = new Handler();
         mPlayerTimer = new Runnable() {
@@ -169,6 +256,38 @@ public class ItemDetailActivity extends AppCompatActivity {
         };
     }
 
+    void setupRecorder() {
+        Log.d("MediaRecorder", "Setting up.");
+
+        String localPath = new File(getCacheDir(), AUDIO_FILENAME).getAbsolutePath();
+
+        mRecorder = new MediaRecorder();
+        mRecorder.setAudioSource(MediaRecorder.AudioSource.MIC);
+        mRecorder.setOutputFormat(MediaRecorder.OutputFormat.AAC_ADTS);
+        mRecorder.setAudioEncoder(MediaRecorder.AudioEncoder.AAC);
+        mRecorder.setOutputFile(localPath);
+
+        try {
+            mRecorder.prepare();
+        }
+        catch (IOException e) {
+            Log.e("MediaRecorder", "Caught IOException", e);
+            setState(State.STOPPED);
+        }
+
+        mRecorderHandler = new Handler();
+        mRecorderTimer = new Runnable() {
+            @Override
+            public void run() {
+                long now = System.currentTimeMillis();
+                mTimeRemain.setText(formatTime((int)((now - mRecorderStartTime) / 1000)));
+
+                if (mState == State.RECORDING)
+                    mRecorderHandler.postDelayed(this, 100);
+            }
+        };
+    }
+
     void setEpisode() {
         String id = getIntent().getStringExtra("item_id");
 
@@ -183,8 +302,7 @@ public class ItemDetailActivity extends AppCompatActivity {
 
     void initializeControls() {
         if (mEpisode != null) {
-            TextView titleView = findViewById(R.id.detail_title);
-            titleView.setText(mEpisode.title);
+            mTitle.setText(mEpisode.title);
 
             if (mEpisode.remoteCoverURL != null) {
                 ImageView cover = findViewById(R.id.detail_cover);
@@ -201,6 +319,11 @@ public class ItemDetailActivity extends AppCompatActivity {
                 catch (IOException e) {
                     Log.e("MediaPlayer", "Exception while setting data source", e);
                 }
+            }
+
+            if (!isOwner()) {
+                mTitle.setEnabled(false);
+                mCover.setEnabled(false);
             }
         }
     }
@@ -270,39 +393,58 @@ public class ItemDetailActivity extends AppCompatActivity {
     void startRecording() {
         Log.d("MediaPlayer", "Starting recording.");
         setState(State.RECORDING);
+
+        if (mRecorder != null) {
+            mRecorder.start();
+            mRecorderStartTime = System.currentTimeMillis();
+            mRecorderHandler.postDelayed(mRecorderTimer, 100);
+        }
     }
 
     void stopRecording() {
         Log.d("MediaPlayer", "Stopping Recording.");
         setState(State.STOPPED);
 
+        if (mRecorder != null) {
+            String localPath = new File(getCacheDir(), AUDIO_FILENAME).getAbsolutePath();
+
+            mRecorder.stop();
+
+            try {
+                mPlayer.setDataSource(localPath);
+                mPlayer.prepare();
+            }
+            catch (IOException e) {
+                Log.e("MediaPlayer", "Caught IOException", e);
+            }
+        }
     }
 
     void startPlayback() {
         Log.d("MediaPlayer", "Starting playback..");
         setState(State.PLAYING);
 
-        if (mEpisode != null && mEpisode.remoteURL != null) {
-            mPlayer.setAudioStreamType(AudioManager.STREAM_MUSIC);
-
-            if (mPlayerIsPrepared) {
-                resumePlayback();
-            }
+        if (mPlayerIsPrepared) {
+            resumePlayback();
         }
     }
 
     void pausePlayback() {
         Log.d("MediaPlayer", "Pausing playback..");
         setState(State.PAUSED);
-        mPlayer.pause();
 
+        if (mPlayer.isPlaying())
+            mPlayer.pause();
     }
 
     void resumePlayback() {
         Log.d("MediaPlayer", "Resuming playback..");
         setState(State.PLAYING);
-        mPlayer.start();
-        mPlayerHandler.postDelayed(mPlayerTimer, 100);
+
+        if (mPlayerIsPrepared) {
+            mPlayer.start();
+            mPlayerHandler.postDelayed(mPlayerTimer, 100);
+        }
     }
 
     void startSeek() {
@@ -333,5 +475,23 @@ public class ItemDetailActivity extends AppCompatActivity {
             mPlayer.seekTo(seekTo);
             mPlayerHandler.postDelayed(mPlayerTimer, 100);
         }
+    }
+
+    void editTitle() {
+        Log.d("ItemDetail", "Requested edit title.");
+        mTitle.setCursorVisible(true);
+
+        if (mTitle.getText().toString().equals("New Episode")) {
+            Log.i("Title", "New Episode");
+            mTitle.selectAll();
+        }
+    }
+
+    void editCover() {
+        Intent intent = new Intent();
+        intent.setType("image/*");
+        intent.setAction(Intent.ACTION_GET_CONTENT);
+        startActivityForResult(Intent.createChooser(intent, "Select Cover"),
+                INTENT_PICK_IMAGE);
     }
 }

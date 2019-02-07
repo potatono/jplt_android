@@ -29,9 +29,11 @@
             android:id="@+id/detail_cover"
             android:layout_width="match_parent"
             android:layout_height="300dp"
-            android:src="@drawable/icon3" />
+            android:src="@drawable/icon3"
+            android:scaleType="centerCrop"
+            />
 
-        <TextView xmlns:android="http://schemas.android.com/apk/res/android"
+        <EditText xmlns:android="http://schemas.android.com/apk/res/android"
             xmlns:tools="http://schemas.android.com/tools"
             android:id="@+id/detail_title"
             style="?android:attr/textAppearanceLarge"
@@ -43,6 +45,14 @@
             android:text="New Episode"
             android:textIsSelectable="false"
             tools:context=".ItemDetailFragment"
+            android:background="@null"
+            android:enabled="true"
+            android:textColor="#000000"
+            android:focusable="true"
+            android:cursorVisible="false"
+            android:singleLine="true"
+            android:imeOptions="actionDone"
+            android:inputType="textCapWords"
              />
 
 
@@ -70,7 +80,8 @@
                 android:layout_centerHorizontal="true"
                 android:layout_marginTop="50dp"
                 android:background="@color/fui_transparent"
-                android:drawableTop="@drawable/record" />
+                android:drawableTop="@drawable/record"
+                android:focusable="true" />
 
             <TextView
                 android:id="@+id/time_elapsed"
