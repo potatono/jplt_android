@@ -41,15 +41,10 @@
             android:layout_marginTop="10dp"
             android:layout_marginRight="10dp"
             android:text="New Episode"
-            android:textIsSelectable="true"
-            tools:context=".ItemDetailFragment" />
+            android:textIsSelectable="false"
+            tools:context=".ItemDetailFragment"
+             />
 
-        <android.support.v7.widget.AppCompatSeekBar
-            android:id="@+id/seek"
-            android:layout_width="match_parent"
-            android:layout_height="50dp"
-            android:layout_marginLeft="10dp"
-            android:layout_marginRight="10dp" />
 
         <RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
             xmlns:app="http://schemas.android.com/apk/res-auto"
@@ -60,15 +55,45 @@
             android:layout_weight="0.5"
             app:layout_behavior="@string/appbar_scrolling_view_behavior">
 
+            <android.support.v7.widget.AppCompatSeekBar
+                android:id="@+id/seek"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginLeft="10dp"
+                android:layout_marginRight="10dp" />
+
             <Button
                 android:id="@+id/media_button"
                 android:layout_width="50dp"
                 android:layout_height="50dp"
                 android:layout_alignParentTop="true"
                 android:layout_centerHorizontal="true"
-                android:layout_marginTop="1dp"
+                android:layout_marginTop="50dp"
                 android:background="@color/fui_transparent"
-                android:drawableTop="@drawable/play" />
+                android:drawableTop="@drawable/record" />
+
+            <TextView
+                android:id="@+id/time_elapsed"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="10dp"
+                android:layout_marginLeft="10dp"
+                android:layout_marginTop="20dp"
+                android:layout_marginEnd="10dp"
+                android:layout_marginBottom="10dp"
+                android:text="0:00"
+                android:textSize="5pt" />
+
+            <TextView
+                android:id="@+id/time_remain"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_alignParentRight="true"
+                android:layout_marginTop="20dp"
+                android:layout_marginRight="10dp"
+                android:text="0:00"
+                android:textSize="5pt" />
+
         </RelativeLayout>
     </LinearLayout>
 

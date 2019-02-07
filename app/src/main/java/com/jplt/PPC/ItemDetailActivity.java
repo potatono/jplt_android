@@ -6,8 +6,10 @@ import android.media.AudioManager;
 import android.media.MediaPlayer;
 import android.os.Bundle;
 import android.os.Handler;
+import android.support.annotation.NonNull;
 import android.support.design.widget.FloatingActionButton;
 import android.support.design.widget.Snackbar;
+import android.support.v7.view.ActionMode;
 import android.support.v7.widget.AppCompatImageButton;
 import android.support.v7.widget.Toolbar;
 import android.util.DisplayMetrics;
@@ -42,9 +44,14 @@ public class ItemDetailActivity extends AppCompatActivity {
 
     Button mMediaButton = null;
     SeekBar mSeekBar = null;
+    TextView mTimeElapsed = null;
+    TextView mTimeRemain = null;
     MediaPlayer mPlayer = null;
     Runnable mPlayerTimer = null;
     Handler mPlayerHandler = null;
+    boolean mPlayerIsPrepared = false;
+    boolean mClosing = false;
+    boolean mSeeking = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -52,21 +59,16 @@ public class ItemDetailActivity extends AppCompatActivity {
         setContentView(R.layout.item_detail);
 
         setupControls();
-
         setupCover();
-
         setupPlayer();
-
         setEpisode();
-
         initializeControls();
     }
 
-
     @Override
     protected void onDestroy() {
+        mClosing = true;
         mPlayer.release();
-        mPlayer = null;
 
         super.onDestroy();
     }
@@ -87,6 +89,25 @@ public class ItemDetailActivity extends AppCompatActivity {
         });
 
         mSeekBar = findViewById(R.id.seek);
+        mSeekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override
+            public void onProgressChanged(SeekBar seekBar, int i, boolean b) {
+                ItemDetailActivity.this.seekChanged();
+            }
+
+            @Override
+            public void onStartTrackingTouch(SeekBar seekBar) {
+                ItemDetailActivity.this.startSeek();
+            }
+
+            @Override
+            public void onStopTrackingTouch(SeekBar seekBar) {
+                ItemDetailActivity.this.stopSeek();
+            }
+        });
+
+        mTimeElapsed = findViewById(R.id.time_elapsed);
+        mTimeRemain = findViewById(R.id.time_remain);
     }
 
     void setupCover() {
@@ -99,24 +120,51 @@ public class ItemDetailActivity extends AppCompatActivity {
         cover.requestLayout();
     }
 
+    String formatTime(int totalSeconds) {
+        int minutes = totalSeconds / 60;
+        int seconds = totalSeconds % 60;
+
+        return String.format("%d:%02d", minutes, seconds);
+    }
+
     void setupPlayer() {
         mPlayer = new MediaPlayer();
+        mPlayer.setOnPreparedListener(new MediaPlayer.OnPreparedListener() {
+            @Override
+            public void onPrepared(MediaPlayer mediaPlayer) {
+                mPlayerIsPrepared = true;
+                mTimeRemain.setText(formatTime(mPlayer.getDuration() / 1000));
+            }
+        });
+        mPlayer.setOnCompletionListener(new MediaPlayer.OnCompletionListener() {
+            @Override
+            public void onCompletion(MediaPlayer mediaPlayer) {
+                setState(State.STOPPED);
+                mTimeElapsed.setText("0:00");
+                mTimeRemain.setText(formatTime(mPlayer.getDuration() / 1000));
+                mSeekBar.setProgress(0);
+            }
+        });
+
         mPlayerHandler = new Handler();
         mPlayerTimer = new Runnable() {
             @Override
             public void run() {
-                long totalDuration = mPlayer.getDuration();
-                long currentDuration = mPlayer.getCurrentPosition();
-                boolean isPlaying = mPlayer.isPlaying();
-
-                if (!isPlaying) {
-                    mSeekBar.setProgress(0);
-                    setState(State.STOPPED);
+                if (mClosing || mState == State.STOPPED)
                     return;
-                }
 
-                mSeekBar.setProgress((int)(100 * currentDuration / totalDuration));
-                mPlayerHandler.postDelayed(this, 100);
+                long total = mPlayer.getDuration();
+                long current = mPlayer.getCurrentPosition();
+                int remain = (int)((total - current) / 1000);
+
+                if (!mSeeking)
+                    mSeekBar.setProgress((int)(100 * current / total));
+
+                mTimeElapsed.setText("-" + formatTime((int)current/1000));
+                mTimeRemain.setText(formatTime(remain));
+
+                if (mPlayer.isPlaying())
+                    mPlayerHandler.postDelayed(this, 100);
             }
         };
     }
@@ -145,6 +193,14 @@ public class ItemDetailActivity extends AppCompatActivity {
 
             if (mEpisode.remoteURL != null) {
                 setState(State.STOPPED);
+
+                try {
+                    mPlayer.setDataSource(mEpisode.remoteURL);
+                    mPlayer.prepare();
+                }
+                catch (IOException e) {
+                    Log.e("MediaPlayer", "Exception while setting data source", e);
+                }
             }
         }
     }
@@ -212,40 +268,70 @@ public class ItemDetailActivity extends AppCompatActivity {
     }
 
     void startRecording() {
+        Log.d("MediaPlayer", "Starting recording.");
         setState(State.RECORDING);
     }
 
     void stopRecording() {
+        Log.d("MediaPlayer", "Stopping Recording.");
         setState(State.STOPPED);
 
     }
 
     void startPlayback() {
+        Log.d("MediaPlayer", "Starting playback..");
         setState(State.PLAYING);
 
         if (mEpisode != null && mEpisode.remoteURL != null) {
             mPlayer.setAudioStreamType(AudioManager.STREAM_MUSIC);
 
-            try {
-                mPlayer.setDataSource(mEpisode.remoteURL);
-                mPlayer.prepare();
-                mPlayer.start();
-                mPlayerHandler.postDelayed(mPlayerTimer, 100);
-            }
-            catch (IOException e) {
-                Log.e("MediaPlayer", e.getLocalizedMessage());
-                setState(State.STOPPED);
+            if (mPlayerIsPrepared) {
+                resumePlayback();
             }
         }
     }
 
     void pausePlayback() {
+        Log.d("MediaPlayer", "Pausing playback..");
         setState(State.PAUSED);
+        mPlayer.pause();
 
     }
 
     void resumePlayback() {
+        Log.d("MediaPlayer", "Resuming playback..");
         setState(State.PLAYING);
+        mPlayer.start();
+        mPlayerHandler.postDelayed(mPlayerTimer, 100);
+    }
 
+    void startSeek() {
+        if (mPlayerIsPrepared) {
+            Log.d("MediaPlayer", "Start seek..");
+            if (mPlayer.isPlaying())
+                mPlayer.pause();
+
+            mSeeking = true;
+        }
+    }
+
+    void stopSeek() {
+        if (mPlayerIsPrepared) {
+            Log.d("MediaPlayer", "Stop seek..");
+            if (mState == State.PLAYING)
+                mPlayer.start();
+
+            mSeeking = false;
+        }
+    }
+
+    void seekChanged() {
+        if (mPlayerIsPrepared && mSeeking) {
+            Log.d("MediaPlayer", "Seek changed..");
+
+            int seekTo = (int) (mSeekBar.getProgress() / 100.0 * mPlayer.getDuration());
+            mPlayer.seekTo(seekTo);
+            mPlayerHandler.postDelayed(mPlayerTimer, 100);
+        }
     }
 }

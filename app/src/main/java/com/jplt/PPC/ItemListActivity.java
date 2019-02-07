@@ -34,12 +34,6 @@ import com.bumptech.glide.Glide;
  */
 public class ItemListActivity extends AppCompatActivity {
 
-    /**
-     * Whether or not the activity is in two-pane mode, i.e. running on a tablet
-     * device.
-     */
-    private boolean mTwoPane;
-
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -53,18 +47,11 @@ public class ItemListActivity extends AppCompatActivity {
         fab.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
-                Snackbar.make(view, "Replace with your own action", Snackbar.LENGTH_LONG)
-                        .setAction("Action", null).show();
+                Context context = view.getContext();
+                Intent intent = new Intent(context, ItemDetailActivity.class);
+                context.startActivity(intent);
             }
         });
-
-        if (findViewById(R.id.item_detail_container) != null) {
-            // The detail container view will be present only in the
-            // large-screen layouts (res/values-w900dp).
-            // If this view is present, then the
-            // activity should be in two-pane mode.
-            mTwoPane = true;
-        }
 
         View recyclerView = findViewById(R.id.item_list);
         assert recyclerView != null;
@@ -79,7 +66,6 @@ public class ItemListActivity extends AppCompatActivity {
             // Choose authentication providers
             List<AuthUI.IdpConfig> providers = Arrays.asList(new AuthUI.IdpConfig.PhoneBuilder().build());
 
-
             // Create and launch sign-in intent
             startActivityForResult(
                     AuthUI.getInstance()
@@ -91,7 +77,7 @@ public class ItemListActivity extends AppCompatActivity {
     }
     private void setupRecyclerView(@NonNull final RecyclerView recyclerView) {
         Episodes episodes = Episodes.getInstance(this);
-        final RecyclerView.Adapter adapter = new SimpleItemRecyclerViewAdapter(this, episodes.episodes, mTwoPane);
+        final RecyclerView.Adapter adapter = new SimpleItemRecyclerViewAdapter(this, episodes.episodes);
         episodes.addListener(new Episodes.EpisodeChangeHandler() {
             @Override
             public void onChange(Episodes.ChangeType type, Episodes.Episode episode) {
@@ -107,7 +93,6 @@ public class ItemListActivity extends AppCompatActivity {
 
         private final ItemListActivity mParentActivity;
         private final List<Episodes.Episode> mValues;
-        private final boolean mTwoPane;
         private final View.OnClickListener mOnClickListener = new View.OnClickListener() {
             @Override
             public void onClick(View view) {
@@ -121,11 +106,9 @@ public class ItemListActivity extends AppCompatActivity {
         };
 
         SimpleItemRecyclerViewAdapter(ItemListActivity parent,
-                                      List<Episodes.Episode> items,
-                                      boolean twoPane) {
+                                      List<Episodes.Episode> items) {
             mValues = items;
             mParentActivity = parent;
-            mTwoPane = twoPane;
         }
 
         @Override
@@ -143,9 +126,6 @@ public class ItemListActivity extends AppCompatActivity {
             if (episode.remoteCoverURL != null) {
                 Glide.with(mParentActivity).load(episode.remoteCoverURL).into(holder.mCoverView);
             }
-
-            //holder.mCoverView.setImageURI(mValues.get(position).remoteCoverURL);
-            //holder.mContentView.setText(mValues.get(position).title);
 
             holder.itemView.setTag(mValues.get(position));
             holder.itemView.setOnClickListener(mOnClickListener);
