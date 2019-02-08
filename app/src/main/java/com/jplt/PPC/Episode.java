@@ -13,13 +13,10 @@ import com.google.firebase.auth.FirebaseUser;
 import com.google.firebase.firestore.CollectionReference;
 import com.google.firebase.firestore.DocumentReference;
 import com.google.firebase.firestore.FirebaseFirestore;
-import com.google.firebase.firestore.FirestoreRegistrar;
 import com.google.firebase.storage.FirebaseStorage;
-import com.google.firebase.storage.StorageMetadata;
 import com.google.firebase.storage.StorageReference;
 import com.google.firebase.storage.UploadTask;
 
-import java.io.File;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.UUID;
@@ -34,6 +31,7 @@ public class Episode {
     public String owner;
     public String remoteURL;
     public Date createDate;
+    public Long duration;
 
     public Episode() {
         this.id = UUID.randomUUID().toString();
@@ -42,6 +40,7 @@ public class Episode {
         this.remoteURL = null;
         this.remoteCoverURL = null;
         this.createDate = null;
+        this.duration = new Long(0);
     }
 
     public Episode(String id, HashMap<String, Object> data) {
@@ -51,6 +50,7 @@ public class Episode {
         this.remoteURL = (String)data.get("remoteURL");
         this.remoteCoverURL = (String)data.get("remoteCoverURL");
         this.createDate = (Date)data.get("createDate");
+        this.duration = (Long)data.get("duration");
     }
 
     @Override
@@ -62,7 +62,7 @@ public class Episode {
         return (this.createDate == null);
     }
 
-    String createRemotePath(String filename) {
+    String getRemotePath(String filename) {
         return "podcasts/" + owner + "/episodes/" + id + "/" + filename;
     }
 
@@ -87,6 +87,7 @@ public class Episode {
         doc.put("title", title);
         doc.put("owner", owner);
         doc.put("createDate", new Timestamp(createDate));
+        doc.put("duration", duration);
 
         if (remoteURL != null) {
             doc.put("remoteURL", remoteURL);
@@ -106,7 +107,7 @@ public class Episode {
     public void upload(Uri uri, final UploadCompleteHandler handler) {
 
         FirebaseStorage storage = FirebaseStorage.getInstance();
-        final StorageReference ref = storage.getReference().child(createRemotePath(uri.getLastPathSegment()));
+        final StorageReference ref = storage.getReference().child(getRemotePath(uri.getLastPathSegment()));
         final UploadTask uploadTask = ref.putFile(uri);
 
         // This is a little mind boggling, refer to Firebase Firestore docs.
@@ -171,8 +172,8 @@ public class Episode {
         OnCompleteListener<Void> docListener = new OnCompleteListener<Void>() {
             @Override
             public void onComplete(@NonNull Task<Void> task) {
-                ref.child("sound.m4a").delete();
-                ref.child("cover.jpg").delete();
+                ref.child(getRemotePath("sound.aac")).delete();
+                ref.child(getRemotePath("cover.jpg")).delete();
                 deleteHandler.onComplete(task);
             }
         };

@@ -45,9 +45,9 @@ public class ItemDetailActivity extends AppCompatActivity {
     public static int INTENT_PICK_IMAGE = 1;
 
     public static String COVER_FILENAME = "cover.jpg";
-    public static String AUDIO_FILENAME = "sound.m4a";
+    public static String AUDIO_FILENAME = "sound.aac";
 
-    enum State { EMPTY, RECORDING, STOPPED, PLAYING, PAUSED }
+    enum State {EMPTY, RECORDING, STOPPED, PLAYING, PAUSED}
 
     State mState = State.EMPTY;
     Episode mEpisode = new Episode();
@@ -105,11 +105,9 @@ public class ItemDetailActivity extends AppCompatActivity {
         if (resultCode != RESULT_OK)
             return;
 
-        //HERE
         if (requestCode == INTENT_PICK_IMAGE) {
             startCroppingCover(data.getData());
-        }
-        else if (requestCode == UCrop.REQUEST_CROP) {
+        } else if (requestCode == UCrop.REQUEST_CROP) {
             Uri resultUri = UCrop.getOutput(data);
             finishEditingCover(resultUri);
         }
@@ -118,9 +116,7 @@ public class ItemDetailActivity extends AppCompatActivity {
     boolean isOwner() {
         FirebaseUser user = FirebaseAuth.getInstance().getCurrentUser();
 
-        return ((mEpisode.isNew() && user != null) ||
-                (user != null && mEpisode.owner == user.getUid()));
-
+        return (user != null && mEpisode.owner.equals(user.getUid()));
     }
 
     void setupControls() {
@@ -205,6 +201,10 @@ public class ItemDetailActivity extends AppCompatActivity {
         });
     }
 
+    String formatTime(long totalSeconds) {
+        return formatTime((int)totalSeconds);
+    }
+
     String formatTime(int totalSeconds) {
         int minutes = totalSeconds / 60;
         int seconds = totalSeconds % 60;
@@ -218,6 +218,7 @@ public class ItemDetailActivity extends AppCompatActivity {
             @Override
             public void onPrepared(MediaPlayer mediaPlayer) {
                 mPlayerIsPrepared = true;
+
                 mTimeRemain.setText(formatTime(mPlayer.getDuration() / 1000));
                 Log.d("MediaPlayer", "Prepared.");
             }
@@ -246,12 +247,12 @@ public class ItemDetailActivity extends AppCompatActivity {
 
                 long total = mPlayer.getDuration();
                 long current = mPlayer.getCurrentPosition();
-                int remain = (int)((total - current) / 1000);
+                int remain = (int) ((total - current) / 1000);
 
                 if (!mSeeking)
-                    mSeekBar.setProgress((int)(100 * current / total));
+                    mSeekBar.setProgress((int) (100 * current / total));
 
-                mTimeElapsed.setText("-" + formatTime((int)current/1000));
+                mTimeElapsed.setText("-" + formatTime((int) current / 1000));
                 mTimeRemain.setText(formatTime(remain));
 
                 if (mPlayer.isPlaying())
@@ -269,12 +270,14 @@ public class ItemDetailActivity extends AppCompatActivity {
         mRecorder.setAudioSource(MediaRecorder.AudioSource.MIC);
         mRecorder.setOutputFormat(MediaRecorder.OutputFormat.AAC_ADTS);
         mRecorder.setAudioEncoder(MediaRecorder.AudioEncoder.AAC);
+        mRecorder.setAudioSamplingRate(44100);
+        mRecorder.setAudioEncodingBitRate(96000);
+        mRecorder.setAudioChannels(1);
         mRecorder.setOutputFile(localPath);
 
         try {
             mRecorder.prepare();
-        }
-        catch (IOException e) {
+        } catch (IOException e) {
             Log.e("MediaRecorder", "Caught IOException", e);
             setState(State.STOPPED);
         }
@@ -284,7 +287,7 @@ public class ItemDetailActivity extends AppCompatActivity {
             @Override
             public void run() {
                 long now = System.currentTimeMillis();
-                mTimeRemain.setText(formatTime((int)((now - mRecorderStartTime) / 1000)));
+                mTimeRemain.setText(formatTime((int) ((now - mRecorderStartTime) / 1000)));
 
                 if (mState == State.RECORDING)
                     mRecorderHandler.postDelayed(this, 100);
@@ -323,6 +326,7 @@ public class ItemDetailActivity extends AppCompatActivity {
         if (!isOwner()) {
             mTitle.setEnabled(false);
             mCover.setEnabled(false);
+            mDeleteButton.setEnabled(false);
         }
     }
 
@@ -365,7 +369,7 @@ public class ItemDetailActivity extends AppCompatActivity {
         }
 
         Button button = findViewById(R.id.media_button);
-        button.setCompoundDrawablesWithIntrinsicBounds(imageId, 0,0,0);
+        button.setCompoundDrawablesWithIntrinsicBounds(imageId, 0, 0, 0);
     }
 
     void toggleState() {
@@ -406,12 +410,12 @@ public class ItemDetailActivity extends AppCompatActivity {
         if (mRecorder != null) {
             Uri localUri = Uri.fromFile(new File(getCacheDir(), AUDIO_FILENAME));
             mRecorder.stop();
+            mEpisode.duration = new Long(System.currentTimeMillis() - mRecorderStartTime);
 
             try {
                 mPlayer.setDataSource(this, localUri);
                 mPlayer.prepare();
-            }
-            catch (IOException e) {
+            } catch (IOException e) {
                 Log.e("MediaPlayer", "Caught IOException", e);
             }
 
@@ -470,7 +474,9 @@ public class ItemDetailActivity extends AppCompatActivity {
         if (mPlayerIsPrepared && mSeeking) {
             Log.d("MediaPlayer", "Seek changed..");
 
-            int seekTo = (int) (mSeekBar.getProgress() / 100.0 * mPlayer.getDuration());
+            int duration = mPlayer.getDuration();
+            int seekTo = (int) (mSeekBar.getProgress() / 100.0 * duration);
+            Log.d("MediaPlayer", "Seeking to " + seekTo + "/" + duration);
             mPlayer.seekTo(seekTo);
             mPlayerHandler.postDelayed(mPlayerTimer, 100);
         }
@@ -521,6 +527,9 @@ public class ItemDetailActivity extends AppCompatActivity {
     }
 
     void startDelete() {
+        if (!isOwner())
+            return;
+
         AlertDialog.Builder dialog = new AlertDialog.Builder(this);
         dialog.setTitle("Delete Episode?");
         dialog.setMessage("Are you sure you want to delete this episode?");
@@ -543,13 +552,12 @@ public class ItemDetailActivity extends AppCompatActivity {
     }
 
     void finishDelete() {
-        if (!mEpisode.isNew()) {
-            mEpisode.delete(new OnCompleteListener<Void>() {
-                @Override
-                public void onComplete(@NonNull Task<Void> task) {
-                    ItemDetailActivity.this.finish();
-                }
-            });
-        }
+        mEpisode.delete(new OnCompleteListener<Void>() {
+            @Override
+            public void onComplete(@NonNull Task<Void> task) {
+                ItemDetailActivity.this.finish();
+            }
+        });
+
     }
 }
