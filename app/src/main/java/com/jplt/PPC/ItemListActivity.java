@@ -8,6 +8,7 @@ import android.support.v7.app.AppCompatActivity;
 import android.support.v7.widget.RecyclerView;
 import android.support.v7.widget.Toolbar;
 import android.support.design.widget.FloatingActionButton;
+import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -32,6 +33,11 @@ import com.bumptech.glide.Glide;
  */
 public class ItemListActivity extends AppCompatActivity {
 
+    public static int INTENT_AUTHENTICATE = 1;
+
+    RecyclerView.Adapter mAdapter = null;
+
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -51,14 +57,12 @@ public class ItemListActivity extends AppCompatActivity {
             }
         });
 
-        View recyclerView = findViewById(R.id.item_list);
-        assert recyclerView != null;
-        setupRecyclerView((RecyclerView) recyclerView);
-
-        ensureAuthenticated();
+        if (ensureAuthenticated()) {
+            setupRecyclerView();
+        }
     }
 
-    protected void ensureAuthenticated() {
+    protected boolean ensureAuthenticated() {
 
         if (FirebaseAuth.getInstance().getCurrentUser() == null) {
             // Choose authentication providers
@@ -70,20 +74,36 @@ public class ItemListActivity extends AppCompatActivity {
                             .createSignInIntentBuilder()
                             .setAvailableProviders(providers)
                             .build(),
-                    200);
+                    INTENT_AUTHENTICATE);
+
+            return false;
         }
+
+        return true;
     }
-    private void setupRecyclerView(@NonNull final RecyclerView recyclerView) {
+
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+
+        Log.d("AUTH", "Auth complete, refreshing view..");
+        setupRecyclerView();
+    }
+
+    private void setupRecyclerView() {
+        RecyclerView recyclerView = findViewById(R.id.item_list);
         Episodes episodes = Episodes.getInstance();
-        final RecyclerView.Adapter adapter = new SimpleItemRecyclerViewAdapter(this, episodes.episodes);
+
+        mAdapter = new SimpleItemRecyclerViewAdapter(this, episodes.episodes);
         episodes.addListener(new Episodes.EpisodeChangeHandler() {
             @Override
             public void onChange(Episodes.ChangeType type, Episode episode) {
-                adapter.notifyDataSetChanged();
+                mAdapter.notifyDataSetChanged();
             }
         });
 
-        recyclerView.setAdapter(adapter);
+        recyclerView.setAdapter(mAdapter);
     }
 
     public static class SimpleItemRecyclerViewAdapter

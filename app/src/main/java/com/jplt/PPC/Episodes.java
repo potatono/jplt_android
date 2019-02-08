@@ -9,9 +9,12 @@ import com.google.firebase.firestore.DocumentChange;
 import com.google.firebase.firestore.EventListener;
 import com.google.firebase.firestore.FirebaseFirestore;
 import com.google.firebase.firestore.FirebaseFirestoreException;
+import com.google.firebase.firestore.Query;
 import com.google.firebase.firestore.QuerySnapshot;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 
@@ -61,7 +64,8 @@ public class Episodes {
     private void setupListener() {
         CollectionReference col = getCollection();
 
-        col.addSnapshotListener(new EventListener<QuerySnapshot>() {
+        col.orderBy("createDate", Query.Direction.DESCENDING)
+           .addSnapshotListener(new EventListener<QuerySnapshot>() {
             @Override
             public void onEvent(@Nullable QuerySnapshot snapshot,
                                 @Nullable FirebaseFirestoreException e)
@@ -89,6 +93,21 @@ public class Episodes {
                 for (Episode ep : episode_map.values()) {
                     episodes.add(ep);
                 }
+
+                // Because we're collecting in a hash we need sort again.. TODO FIXME GROSS
+                Collections.sort(episodes, new Comparator<Episode>() {
+                    @Override
+                    public int compare(Episode lhs, Episode rhs) {
+                        if (lhs == null && rhs == null)
+                            return 0;
+                        else if (lhs == null)
+                            return -1;
+                        else if (rhs == null)
+                            return 1;
+                        else
+                            return rhs.createDate.compareTo(lhs.createDate);
+                    }
+                });
 
                 for (DocumentChange diff : snapshot.getDocumentChanges()) {
                     String id = diff.getDocument().getId();
