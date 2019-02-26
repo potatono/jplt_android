@@ -207,6 +207,9 @@ public class ItemListActivity extends AppCompatActivity {
             else if (episode.remoteCoverURL != null) {
                 Glide.with(mParentActivity).load(episode.remoteCoverURL).into(holder.mCoverView);
             }
+            else {
+                holder.mCoverView.setImageResource(R.drawable.icon3);
+            }
 
             if (episode.profile.username != null) {
                 holder.mUsernameView.setText(episode.profile.username);
