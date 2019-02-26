@@ -1,7 +1,9 @@
 package com.jplt.PPC;
 
+import android.Manifest;
 import android.content.DialogInterface;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.media.AudioAttributes;
 import android.media.MediaPlayer;
 import android.media.MediaRecorder;
@@ -10,6 +12,7 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.support.annotation.NonNull;
 import android.support.design.widget.FloatingActionButton;
+import android.support.v4.app.ActivityCompat;
 import android.support.v7.app.AlertDialog;
 import android.util.DisplayMetrics;
 import android.util.Log;
@@ -21,14 +24,18 @@ import android.view.MenuItem;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.ImageView;
+import android.widget.ProgressBar;
 import android.widget.SeekBar;
 import android.widget.TextView;
 
 import com.bumptech.glide.Glide;
 import com.google.android.gms.tasks.OnCompleteListener;
+import com.google.android.gms.tasks.OnSuccessListener;
 import com.google.android.gms.tasks.Task;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseUser;
+import com.google.firebase.storage.FileDownloadTask;
+import com.google.firebase.storage.OnProgressListener;
 import com.yalantis.ucrop.UCrop;
 
 import java.io.File;
@@ -40,9 +47,10 @@ import java.io.IOException;
  * item details are presented side-by-side with a list of items
  * in a {@link ItemListActivity}.
  */
-public class ItemDetailActivity extends AppCompatActivity {
+public class ItemDetailActivity extends AppCompatActivity implements ActivityCompat.OnRequestPermissionsResultCallback {
 
-    public static int INTENT_PICK_IMAGE = 1;
+    public static final int INTENT_PICK_IMAGE = 1;
+    public static final int PERM_RECORD_AUDIO = 0;
 
     public static String COVER_FILENAME = "cover.jpg";
     public static String AUDIO_FILENAME = "sound.aac";
@@ -69,6 +77,10 @@ public class ItemDetailActivity extends AppCompatActivity {
     Runnable mRecorderTimer = null;
     Handler mRecorderHandler = null;
     long mRecorderStartTime = 0;
+    ImageView mProfileView = null;
+    TextView mUsernameView = null;
+    TextView mDateView = null;
+    ProgressBar mDownloadProgress = null;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -111,6 +123,13 @@ public class ItemDetailActivity extends AppCompatActivity {
             Uri resultUri = UCrop.getOutput(data);
             finishEditingCover(resultUri);
         }
+    }
+
+    File getLocalFile() {
+        File path = new File(getCacheDir(), mEpisode.id);
+        path.mkdirs();
+
+        return new File(path, AUDIO_FILENAME);
     }
 
     boolean isOwner() {
@@ -182,6 +201,12 @@ public class ItemDetailActivity extends AppCompatActivity {
 
         mTimeElapsed = findViewById(R.id.time_elapsed);
         mTimeRemain = findViewById(R.id.time_remain);
+
+        mUsernameView = findViewById(R.id.username);
+        mProfileView = findViewById(R.id.profile_image);
+        mDateView = findViewById(R.id.date);
+
+        mDownloadProgress = findViewById(R.id.download_progress);
     }
 
     void setupCover() {
@@ -202,7 +227,7 @@ public class ItemDetailActivity extends AppCompatActivity {
     }
 
     String formatTime(long totalSeconds) {
-        return formatTime((int)totalSeconds);
+        return formatTime((int) totalSeconds);
     }
 
     String formatTime(int totalSeconds) {
@@ -236,6 +261,8 @@ public class ItemDetailActivity extends AppCompatActivity {
 
         AudioAttributes.Builder aaBuilder = new AudioAttributes.Builder();
         aaBuilder.setContentType(AudioAttributes.CONTENT_TYPE_MUSIC);
+        aaBuilder.setUsage(AudioAttributes.USAGE_MEDIA);
+        aaBuilder.setFlags(AudioAttributes.FLAG_AUDIBILITY_ENFORCED);
         mPlayer.setAudioAttributes(aaBuilder.build());
 
         mPlayerHandler = new Handler();
@@ -261,10 +288,28 @@ public class ItemDetailActivity extends AppCompatActivity {
         };
     }
 
+    @Override
+    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+
+        if (requestCode == PERM_RECORD_AUDIO) {
+            setupRecorder();
+        }
+    }
+
     void setupRecorder() {
         Log.d("MediaRecorder", "Setting up.");
 
-        String localPath = new File(getCacheDir(), AUDIO_FILENAME).getAbsolutePath();
+        int permission = ActivityCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO);
+        if (permission != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this,
+                    new String[]{Manifest.permission.RECORD_AUDIO}, PERM_RECORD_AUDIO);
+
+            return;
+        }
+
+        //new File(getCacheDir(), AUDIO_FILENAME).getAbsolutePath();
+        String localPath = getLocalFile().getAbsolutePath();
 
         mRecorder = new MediaRecorder();
         mRecorder.setAudioSource(MediaRecorder.AudioSource.MIC);
@@ -306,6 +351,7 @@ public class ItemDetailActivity extends AppCompatActivity {
 
     void initializeControls() {
         mTitle.setText(mEpisode.title);
+        mDateView.setText(mEpisode.getCreatedAgo());
 
         if (mEpisode.remoteCoverURL != null) {
             ImageView cover = findViewById(R.id.detail_cover);
@@ -313,20 +359,67 @@ public class ItemDetailActivity extends AppCompatActivity {
         }
 
         if (mEpisode.remoteURL != null) {
-            setState(State.STOPPED);
-
-            try {
-                mPlayer.setDataSource(mEpisode.remoteURL);
-                mPlayer.prepare();
-            } catch (IOException e) {
-                Log.e("MediaPlayer", "Exception while setting data source", e);
-            }
+            setPlayerMedia();
         }
+
+        if (mEpisode.profile.username != null) {
+            mUsernameView.setText(mEpisode.profile.username);
+        }
+
+        if (mEpisode.profile.remoteThumbURL != null) {
+            Glide.with(this).load(mEpisode.profile.remoteThumbURL).into(mProfileView);
+        }
+
 
         if (!isOwner()) {
             mTitle.setEnabled(false);
             mCover.setEnabled(false);
             mDeleteButton.setEnabled(false);
+        }
+    }
+
+    void preparePlayer(Uri uri) {
+        try {
+            mPlayer.setDataSource(this, uri);
+            mPlayer.prepare();
+        } catch (IOException e) {
+            Log.e("PLAYER", "Exception preparing player", e);
+        }
+    }
+
+    void setPlayerMedia() {
+        setState(State.STOPPED);
+
+        final File localFile = getLocalFile();
+
+        if (localFile.exists()) {
+            preparePlayer(Uri.fromFile(localFile));
+        }
+        else {
+            mMediaButton.setVisibility(View.INVISIBLE);
+            mDownloadProgress.setVisibility(View.VISIBLE);
+
+            OnSuccessListener<FileDownloadTask.TaskSnapshot> successHandler = new OnSuccessListener<FileDownloadTask.TaskSnapshot>() {
+                @Override
+                public void onSuccess(FileDownloadTask.TaskSnapshot taskSnapshot) {
+                    preparePlayer(Uri.fromFile(localFile));
+                    mMediaButton.setVisibility(View.VISIBLE);
+                    mDownloadProgress.setVisibility(View.INVISIBLE);
+                }
+            };
+            OnProgressListener<FileDownloadTask.TaskSnapshot> progressHandler = new OnProgressListener<FileDownloadTask.TaskSnapshot>() {
+                @Override
+                public void onProgress(FileDownloadTask.TaskSnapshot taskSnapshot) {
+                    long total = taskSnapshot.getTotalByteCount();
+                    long xfer = taskSnapshot.getBytesTransferred();
+
+                    if (total > 0) {
+                        mDownloadProgress.setProgress((int)(xfer / total * 100));
+                    }
+                }
+            };
+
+            mEpisode.downloadRecording(Uri.fromFile(localFile), successHandler, progressHandler);
         }
     }
 
@@ -408,7 +501,8 @@ public class ItemDetailActivity extends AppCompatActivity {
         setState(State.STOPPED);
 
         if (mRecorder != null) {
-            Uri localUri = Uri.fromFile(new File(getCacheDir(), AUDIO_FILENAME));
+            //Uri localUri = Uri.fromFile(new File(getCacheDir(), AUDIO_FILENAME));
+            Uri localUri = Uri.fromFile(getLocalFile());
             mRecorder.stop();
             mEpisode.duration = new Long(System.currentTimeMillis() - mRecorderStartTime);
 
